@@ -1,0 +1,98 @@
+**📘 HelpDesk System - Full API Endpoint List**
+
+---
+
+### 🔐 Authentication & User APIs
+
+| Method | URL | Description |
+|--------|-----|-------------|
+| POST | `/api/users/register` | Register new user |
+| POST | `/api/users/login` | Login and get JWT |
+| GET | `/api/users/profile` | Get logged-in user profile |
+| PUT | `/api/users/profile` | Update profile (name/email) |
+| PUT | `/api/users/password` | Change password |
+| POST | `/api/users/forgot-password` | Request password reset link |
+| POST | `/api/users/reset-password/:token` | Reset password with token |
+
+---
+
+### 👑 Admin - User Management
+
+| Method | URL | Description |
+|--------|-----|-------------|
+| POST | `/api/admin/users` | Create new user (admin) |
+| GET | `/api/admin/users` | Get all users |
+| PUT | `/api/admin/users/:id` | Update user role |
+| DELETE | `/api/admin/users/:id` | Delete user |
+| PUT | `/api/admin/users/:id/suspend` | Suspend/unsuspend user |
+| PUT | `/api/admin/users/:id/reset-password` | Admin triggers password reset email |
+
+---
+
+### 🎫 Ticket APIs
+
+| Method | URL | Description |
+|--------|-----|-------------|
+| POST | `/api/tickets` | Create a new ticket |
+| GET | `/api/tickets` | Get all tickets (Admin/Agent) |
+| GET | `/api/tickets/my` | Get tickets created by me |
+| GET | `/api/tickets/assigned` | Get tickets assigned to me (Agent) |
+| PUT | `/api/tickets/:id` | Update ticket (status, assignedTo, priority) |
+| DELETE | `/api/tickets/:id` | Delete ticket (Admin only) |
+| POST | `/api/tickets/:id/upload` | Upload attachment to ticket |
+| GET | `/api/tickets/:ticketId/details` | Get ticket with comments |
+| GET | `/api/tickets/:ticketId/priority-logs` | Get priority change history |
+| GET | `/api/tickets/:ticketId/history` | Get full ticket audit log |
+
+---
+
+### 💬 Comment APIs
+
+| Method | URL | Description |
+|--------|-----|-------------|
+| POST | `/api/comments/:ticketId` | Add comment to ticket |
+| GET | `/api/comments/:ticketId` | Get comments for a ticket |
+| PUT | `/api/comments/:commentId` | Edit a comment |
+| DELETE | `/api/comments/:commentId` | Delete a comment |
+
+---
+
+### 🔔 Notification APIs
+
+| Method | URL | Description |
+|--------|-----|-------------|
+| GET | `/api/notifications` | Get my notifications |
+| PUT | `/api/notifications/:id/read` | Mark single notification as read |
+| PUT | `/api/notifications/mark-all-read` | Mark all notifications as read |
+
+---
+
+### 📊 Admin Dashboard & SLA Settings
+
+| Method | URL | Description |
+|--------|-----|-------------|
+| GET | `/api/admin/dashboard` | Ticket stats overview |
+| GET | `/api/admin/sla-settings` | View SLA hours (per priority) |
+| PUT | `/api/admin/sla-settings` | Update SLA hours |
+
+---
+
+### ⏰ Background Tasks (via Cron - automatic)
+
+| Task | Description |
+|------|-------------|
+| SLA Reminder | 30 min before SLA breach, send email alert |
+| SLA Breach Detection | Mark tickets as breached, notify assigned/admin |
+| Auto Escalation | Reassign breached tickets to Admin, bump priority |
+| Ticket History Logs | Save assignment/status/priority changes |
+
+---
+
+✅ All routes are protected via `protect` middleware.
+✅ Admin/Agent/User role-based access enforced where needed.
+✅ Realtime events (Socket.IO): ticket updates + notifications
+
+---
+
+End of API List ✅
+
