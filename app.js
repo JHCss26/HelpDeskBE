@@ -35,6 +35,14 @@ app.use("/api/categories", categoryRoutes);
 app.use("/api/departments", departmentRoutes);
 app.use("/api/notifications", notificationRoutes);
 
+// point express to serve the static files from the Helpdesk frontend  Dist Folder
+app.use(express.static(path.join(__dirname, "frontend/dist")));
+
+//Fallback: send index.html for any other requests (e.g., React Router)
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "frontend/dist/index.html"));
+});
+
 // Error Handling Middleware
 app.use(errorHandler);
 
