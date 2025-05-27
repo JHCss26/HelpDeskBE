@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const User = require('../models/User');
 const bcrypt = require('bcryptjs');
+const {sendEmail} = require('../utils/email.util');
 
 // @desc    Get my profile
 // @route   GET /api/users/profile

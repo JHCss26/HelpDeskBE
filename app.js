@@ -24,6 +24,9 @@ app.use(express.json());
 app.use("/uploads", express.static(path.join(__dirname, "uploads"))); // Static folder for attachments
 
 // Routes
+app.get("/", (req, res) => {
+  res.send("Welcome to the Ticketing System API");
+});
 app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/admin", adminRoutes);
