@@ -93,6 +93,9 @@ const getAllTickets = async (req, res, next) => {
       // Allow comma-separated list: ?status=Open,In%20Progress
       const statuses = status.split(",");
       filter.status = { $in: statuses };
+    } else {
+      // Default to showing all statuses except Closed
+      filter.status = { $ne: "Closed" };
     }
 
     if (priority) {
@@ -182,11 +185,19 @@ const updateTicket = async (req, res, next) => {
       }
       ticket.closureReason = closureReason;
       ticket.resolutionNotes = resolutionNotes || "";
-      ticket.closureDate = new Date();
+      const now = new Date();
+      ticket.closureDate = now;
+      ticket.totalTimeSpent = now - ticket.createdAt; // Calculate total time spent
+
     } else {
       ticket.closureReason = undefined;
       ticket.resolutionNotes = undefined;
       ticket.closureDate = undefined;
+    }
+
+    if(status === "Reopen") {
+      ticket.reOpenDate = new Date();
+      ticket.totalTimeSpent = undefined; // Reset time spent when reopening
     }
 
     // ── Status change & history ──
@@ -227,13 +238,18 @@ const updateTicket = async (req, res, next) => {
       assignedTo &&
       (!ticket.assignedTo || ticket.assignedTo._id.toString() !== assignedTo)
     ) {
-      const newAssignedTo = await User.findById(assignedTo).name;
+      console.log("Assigning to:", assignedTo);
+      if (!assignedTo) {
+        return res.status(400).json({ message: "assignedTo is required." });
+      }
+      const newAssignedTo = await User.findById(assignedTo);
+      console.log("New assignedTo:", newAssignedTo.name);
       await TicketHistory.create({
         ticket: ticket._id,
         changedBy: req.user._id,
         fieldChanged: "assignedTo",
         oldValue: ticket.assignedTo ? ticket.assignedTo.name : "Unassigned",
-        newValue: newAssignedTo, // will be populated by client if needed
+        newValue: newAssignedTo?.name, // will be populated by client if needed
       });
       ticket.assignedTo = assignedTo;
       isAssigned = true;

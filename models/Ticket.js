@@ -20,6 +20,10 @@ const ticketSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "Category",
     },
+    department: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Department",
+    },
     priority: {
       type: String,
       enum: ["Low", "Medium", "High", "Critical"],
@@ -34,6 +38,10 @@ const ticketSchema = new mongoose.Schema(
         "Pending",
         "Resolved",
         "Closed",
+        "Reopen",
+        "On Hold",
+        "Cancelled",
+        "Waiting for Customer",
       ],
       default: "Open",
     },
@@ -82,6 +90,10 @@ const ticketSchema = new mongoose.Schema(
     },
     closureDate: {
       type: Date,
+    },
+    totalTimeSpent: {
+      type: Number, // in seconds
+      default: 0,
     },
   },
   { timestamps: true }
