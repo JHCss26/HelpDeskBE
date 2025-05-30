@@ -8,6 +8,7 @@ const { calculateSlaDueDate } = require("../utils/sla.utils");
 const { sendEmail } = require("../utils/email.util");
 const { sendNotification } = require("../sockets/notification.socket");
 const ExcelJS = require("exceljs");
+const { monthDateRange } = require("../utils/helper");
 
 // @desc    Create new Ticket
 // @route   POST /api/tickets
@@ -43,8 +44,8 @@ const createTicket = async (req, res, next) => {
     const ticketRecord = await Ticket.findById(ticket._id)
       .populate("createdBy", "name email")
       .populate("assignedTo", "name email")
-      .populate("category", "name") // ⬅️ Fetch category name only
-      .populate("department", "name") // optional if you use department
+      .populate("category", "name")
+      .populate("department", "name")
       .lean();
 
     await sendNotification(
@@ -159,7 +160,6 @@ const getMyTickets = async (req, res, next) => {
 // @access  Private (Agent/Admin)
 const updateTicket = async (req, res, next) => {
   const io = req.app.get("io");
-
   try {
     const { status, assignedTo, priority, closureReason, resolutionNotes } =
       req.body;
@@ -188,14 +188,13 @@ const updateTicket = async (req, res, next) => {
       const now = new Date();
       ticket.closureDate = now;
       ticket.totalTimeSpent = now - ticket.createdAt; // Calculate total time spent
-
     } else {
       ticket.closureReason = undefined;
       ticket.resolutionNotes = undefined;
       ticket.closureDate = undefined;
     }
 
-    if(status === "Reopen") {
+    if (status === "Reopen") {
       ticket.reOpenDate = new Date();
       ticket.totalTimeSpent = undefined; // Reset time spent when reopening
     }
@@ -210,6 +209,10 @@ const updateTicket = async (req, res, next) => {
         newValue: status,
       });
       ticket.status = status;
+      ticket.statusHistory.push({
+        status,
+        at: new Date(),
+      });
       isStatusChanged = true;
 
       // If we just closed it, also log closureReason & notes
@@ -390,7 +393,6 @@ const updateTicket = async (req, res, next) => {
 const uploadAttachment = async (req, res, next) => {
   try {
     const ticket = await Ticket.findById(req.params.id);
-
     if (!ticket) {
       return res.status(404).json({ message: "Ticket not found" });
     }
@@ -822,6 +824,178 @@ const exportTicketById = async (req, res, next) => {
   }
 };
 
+const ticketSummaryChart = async (req, res, next) => {
+  try {
+    const now = new Date();
+    const year = parseInt(req.query.year, 10) || now.getFullYear();
+    const month = parseInt(req.query.month, 10) || now.getMonth() + 1;
+
+    if (month < 1 || month > 12) {
+      return res.status(400).json({ error: "month must be 1–12" });
+    }
+
+    const { start, end } = monthDateRange(year, month);
+
+    const [result] = await Ticket.aggregate([
+      { $match: { createdAt: { $gte: start, $lt: end } } },
+      {
+        $facet: {
+
+          // status counts
+          status: [
+            { $group: { _id: "$status", count: { $sum: 1 } } },
+          ],
+
+          // 1) Priority counts
+          priority: [{ $group: { _id: "$priority", count: { $sum: 1 } } }],
+
+          // 2) By assignee
+          assignees: [
+            { $group: { _id: "$assignedTo", count: { $sum: 1 } } },
+            {
+              $lookup: {
+                from: "users",
+                localField: "_id",
+                foreignField: "_id",
+                as: "user",
+              },
+            },
+            { $unwind: { path: "$user", preserveNullAndEmptyArrays: true } },
+            {
+              $project: {
+                _id: 0,
+                assigneeId: "$_id",
+                assigneeName: { $ifNull: ["$user.name", "Unassigned"] },
+                count: 1,
+              },
+            },
+            { $sort: { count: -1 } },
+          ],
+
+          // 3) By category
+          categories: [
+            { $group: { _id: "$category", count: { $sum: 1 } } },
+            {
+              $lookup: {
+                from: "categories",
+                localField: "_id",
+                foreignField: "_id",
+                as: "cat",
+              },
+            },
+            { $unwind: { path: "$cat", preserveNullAndEmptyArrays: true } },
+            {
+              $project: {
+                _id: 0,
+                categoryId: "$_id",
+                categoryName: { $ifNull: ["$cat.name", "Uncategorized"] },
+                count: 1,
+              },
+            },
+            { $sort: { count: -1 } },
+          ],
+
+          // 4) By department
+          departments: [
+            { $group: { _id: "$department", count: { $sum: 1 } } },
+            {
+              $lookup: {
+                from: "departments",
+                localField: "_id",
+                foreignField: "_id",
+                as: "dept",
+              },
+            },
+            { $unwind: { path: "$dept", preserveNullAndEmptyArrays: true } },
+            {
+              $project: {
+                _id: 0,
+                departmentId: "$_id",
+                departmentName: { $ifNull: ["$dept.name", "No Department"] },
+                count: 1,
+              },
+            },
+            { $sort: { count: -1 } },
+          ],
+        },
+      },
+    ]);
+
+    // Turn priority array into an object with zeros for missing enums
+    const priorities = ["Low", "Medium", "High", "Critical"];
+    const priorityCounts = priorities.reduce((o, p) => {
+      o[p] = 0;
+      return o;
+    }, {});
+    result.priority.forEach(({ _id, count }) => {
+      priorityCounts[_id] = count;
+    });
+
+    const statuses = ["Open", "In Progress", "On Hold", "Waiting for Customer", "Resolved", "Closed"];
+    const statusCounts = statuses.reduce((o, s) => {
+      o[s] = 0;
+      return o;
+    }, {});
+    result.status.forEach(({ _id, count }) => {
+      statusCounts[_id] = count;
+    });
+
+    res.json({
+      year,
+      month,
+      status: statusCounts,
+      priority: priorityCounts,
+      assignees: result.assignees,
+      categories: result.categories,
+      departments: result.departments,
+    });
+  } catch (err) {
+    console.error("fetch summary error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+};
+
+const totalticketStatusCount = async (req, res, next) => {
+  try {
+    const now = new Date();
+    const year = parseInt(req.query.year, 10) || now.getFullYear();
+    const month = parseInt(req.query.month, 10) || now.getMonth() + 1;
+    if (month < 1 || month > 12) {
+      return res.status(400).json({ error: "month must be 1–12" });
+    }
+
+    const { start, end } = monthDateRange(year, month);
+
+    const aggregation = await Ticket.aggregate([
+      // filter to this month
+      { $match: { createdAt: { $gte: start, $lt: end } } },
+
+      // group by status
+      {
+        $group: {
+          _id: "$status",
+          count: { $sum: 1 },
+        },
+      },
+    ]);
+
+    // Turn array into lookup object
+    const byStatus = aggregation.reduce((acc, { _id, count }) => {
+      acc[_id] = count;
+      return acc;
+    }, {});
+
+    // Compute total as sum of all statuses
+    const total = aggregation.reduce((sum, { count }) => sum + count, 0);
+
+    res.json({ year, month, total, byStatus });
+  } catch (err) {
+    console.error("Error fetching status summary:", err);
+    res.status(500).json({ error: "Server error" });
+    next(err);
+  }
+};
+
 module.exports = {
   createTicket,
   getAllTickets,
@@ -838,4 +1012,6 @@ module.exports = {
   getMyActiveTickets,
   exportTickets,
   exportTicketById,
+  ticketSummaryChart,
+  totalticketStatusCount,
 };

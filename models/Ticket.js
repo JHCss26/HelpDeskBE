@@ -45,6 +45,12 @@ const ticketSchema = new mongoose.Schema(
       ],
       default: "Open",
     },
+    statusHistory: [
+    {
+      status: { type: String, enum: [ /* your statuses */ ] },
+      at:     { type: Date,   default: Date.now }
+    }
+  ],
     attachments: [
       {
         type: String, // filename or URL if using S3/Cloudinary later

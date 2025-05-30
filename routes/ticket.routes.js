@@ -16,6 +16,8 @@ const {
   getMyActiveTickets,
   exportTickets,
   exportTicketById,
+  ticketSummaryChart,
+  totalticketStatusCount,
 } = require("../controllers/ticket.controller");
 const { protect } = require("../middlewares/auth.middleware");
 const { authorizeRoles } = require("../middlewares/role.middleware");
@@ -77,5 +79,9 @@ router.get('/export', protect, exportTickets);
 
 // Export ticket by id (Admin / Agent / User)
 router.get('/:id/export', protect, exportTicketById)
+
+router.get("/summary", protect, ticketSummaryChart);
+
+router.get("/status/totals", protect, totalticketStatusCount);
 
 module.exports = router;
