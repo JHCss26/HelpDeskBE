@@ -21,7 +21,8 @@ const server = http.createServer(app);
 const io = socketio(server, {
   cors: {
     origin: FRONTEND,
-    methods: ["GET", "POST"],
+    methods: ["GET", "POST", "PUT", "DELETE"],
+    allowedHeaders: ["Content-Type", "Authorization"],
     credentials: true,
   },
 });

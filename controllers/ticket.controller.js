@@ -8,7 +8,7 @@ const { calculateSlaDueDate } = require("../utils/sla.utils");
 const { sendEmail } = require("../utils/email.util");
 const { sendNotification } = require("../sockets/notification.socket");
 const ExcelJS = require("exceljs");
-const { monthDateRange } = require("../utils/helper");
+const { monthDateRange, durationsForTicket } = require("../utils/helper");
 
 // @desc    Create new Ticket
 // @route   POST /api/tickets
@@ -824,6 +824,9 @@ const exportTicketById = async (req, res, next) => {
   }
 };
 
+// @desc Get ticket summary chart data for a month
+// @route GET /api/tickets/summary
+// @access Private (Admin/Agent)
 const ticketSummaryChart = async (req, res, next) => {
   try {
     const now = new Date();
@@ -840,11 +843,8 @@ const ticketSummaryChart = async (req, res, next) => {
       { $match: { createdAt: { $gte: start, $lt: end } } },
       {
         $facet: {
-
           // status counts
-          status: [
-            { $group: { _id: "$status", count: { $sum: 1 } } },
-          ],
+          status: [{ $group: { _id: "$status", count: { $sum: 1 } } }],
 
           // 1) Priority counts
           priority: [{ $group: { _id: "$priority", count: { $sum: 1 } } }],
@@ -931,7 +931,14 @@ const ticketSummaryChart = async (req, res, next) => {
       priorityCounts[_id] = count;
     });
 
-    const statuses = ["Open", "In Progress", "On Hold", "Waiting for Customer", "Resolved", "Closed"];
+    const statuses = [
+      "Open",
+      "In Progress",
+      "On Hold",
+      "Waiting for Customer",
+      "Resolved",
+      "Closed",
+    ];
     const statusCounts = statuses.reduce((o, s) => {
       o[s] = 0;
       return o;
@@ -955,6 +962,9 @@ const ticketSummaryChart = async (req, res, next) => {
   }
 };
 
+// @desc Get total ticket counts by status for a month
+// @route GET /api/tickets/status/totals
+// @access Private (Admin/Agent)
 const totalticketStatusCount = async (req, res, next) => {
   try {
     const now = new Date();
@@ -996,6 +1006,71 @@ const totalticketStatusCount = async (req, res, next) => {
   }
 };
 
+// @desc Get Open Vs Close data graph
+// @route GET /api/tickets/status/bargraph?year="pass the year"
+// @access Private (Admin/Agent)
+const bargraphForTicketStatus = async (req, res, next) => {
+  try {
+    const now = new Date();
+    const yearParam = parseInt(req.query.year, 10) || now.getFullYear();
+    if (isNaN(yearParam) || yearParam < 1970 || yearParam > 3000) {
+      return res.status(400).json({ error: "Invalid year" });
+    }
+
+    // Build the start/end timestamps for the entire year:
+    const yearStart = new Date(yearParam, 0, 1, 0, 0, 0, 0);
+    const yearEnd = new Date(yearParam + 1, 0, 1, 0, 0, 0, 0);
+
+    // Aggregate only tickets with status “Open” or “Closed” in this year
+    const aggregation = await Ticket.aggregate([
+      {
+        $match: {
+          status: { $in: ["Open", "Closed"] },
+          createdAt: { $gte: yearStart, $lt: yearEnd },
+        },
+      },
+      // Project out the month number (1–12) from createdAt
+      {
+        $project: {
+          month: { $month: "$createdAt" },
+          status: 1,
+        },
+      },
+      // Group by month and status
+      {
+        $group: {
+          _id: { month: "$month", status: "$status" },
+          count: { $sum: 1 },
+        },
+      },
+    ]);
+
+    // Initialize an array of 12 objects { month: 1..12, open:0, closed:0 }
+    const result = Array.from({ length: 12 }, (_, i) => ({
+      month: i + 1,
+      open: 0,
+      closed: 0,
+    }));
+
+    // Fill in the counts from aggregation
+    aggregation.forEach(({ _id: { month, status }, count }) => {
+      if (status === "Open") {
+        result[month - 1].open = count;
+      } else if (status === "Closed") {
+        result[month - 1].closed = count;
+      }
+    });
+
+    return res.json({
+      year: yearParam,
+      data: result,
+    });
+  } catch (err) {
+    console.error("Error in /yearly-status:", err);
+    return res.status(500).json({ error: "Server error" });
+  }
+};
+
 module.exports = {
   createTicket,
   getAllTickets,
@@ -1014,4 +1089,5 @@ module.exports = {
   exportTicketById,
   ticketSummaryChart,
   totalticketStatusCount,
+  bargraphForTicketStatus,
 };
