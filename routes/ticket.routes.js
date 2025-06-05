@@ -16,6 +16,10 @@ const {
   getMyActiveTickets,
   exportTickets,
   exportTicketById,
+  ticketSummaryChart,
+  totalticketStatusCount,
+  averageOpenTime,
+  bargraphForTicketStatus,
 } = require("../controllers/ticket.controller");
 const { protect } = require("../middlewares/auth.middleware");
 const { authorizeRoles } = require("../middlewares/role.middleware");
@@ -77,5 +81,14 @@ router.get('/export', protect, exportTickets);
 
 // Export ticket by id (Admin / Agent / User)
 router.get('/:id/export', protect, exportTicketById)
+
+// Get Summary of all ticket using donut chart
+router.get("/summary", protect, ticketSummaryChart);
+
+// get total numbers of tickets by status
+router.get("/status/totals", protect, totalticketStatusCount);
+
+// Api for geting Open Vs Close of Each month
+router.get("/status/bargraph", protect, bargraphForTicketStatus)
 
 module.exports = router;
