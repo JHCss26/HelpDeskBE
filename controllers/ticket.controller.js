@@ -85,7 +85,7 @@ const createTicket = async (req, res, next) => {
 // @access  Private (Admin/Agent)
 const getAllTickets = async (req, res, next) => {
   try {
-    const { status, priority } = req.query;
+    const { status, priority, assignee } = req.query;
 
     // Build a Mongo filter object
     const filter = {};
@@ -102,6 +102,11 @@ const getAllTickets = async (req, res, next) => {
     if (priority) {
       const priorities = priority.split(",");
       filter.priority = { $in: priorities };
+    }
+
+    if(assignee){
+      const assignees = assignee.split(",");
+      filter.assignedTo = {$in: assignees}
     }
 
     const tickets = await Ticket.find(filter)

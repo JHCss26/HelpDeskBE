@@ -156,10 +156,17 @@ const resetPassword = async (req, res, next) => {
 // @access  Public
 const getAllUsers = async (req, res, next) => {
   try {
-    const users = await User.find().select('-password');
+    const filter = {}
+    const {role} = req.query;
+    if(role){
+      filter.role = role;
+    }
+
+    const users = await User.find(filter).select('-password');
     res.json(users);
   } catch (error) {
     next(error);
   }
 };
+
 module.exports = { getMyProfile, updateMyProfile, changePassword, forgotPassword, resetPassword, getAllUsers };

@@ -87,7 +87,14 @@ const createUserByAdmin = async (req, res, next) => {
 // @access  Private (Admin)
 const getAllUsers = async (req, res, next) => {
   try {
-    const users = await User.find().select("-password").sort({ createdAt: -1 });
+    const filter = {};
+    const { role } = req.query;
+    if (role) {
+      filter.role = role;
+    }
+    const users = await User.find(filter)
+      .select("-password")
+      .sort({ createdAt: -1 });
     res.json(users);
   } catch (error) {
     next(error);
