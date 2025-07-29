@@ -104,9 +104,9 @@ const getAllTickets = async (req, res, next) => {
       filter.priority = { $in: priorities };
     }
 
-    if(assignee){
+    if (assignee) {
       const assignees = assignee.split(",");
-      filter.assignedTo = {$in: assignees}
+      filter.assignedTo = { $in: assignees };
     }
 
     const tickets = await Ticket.find(filter)
@@ -832,7 +832,7 @@ const exportTicketById = async (req, res, next) => {
 // @desc Get ticket summary chart data for a month
 // @route GET /api/tickets/summary
 // @access Private (Admin/Agent)
-const ticketSummaryChart = async (req, res, next) => {
+const ticketSummaryCharts = async (req, res, next) => {
   try {
     const now = new Date();
     const year = parseInt(req.query.year, 10) || now.getFullYear();
@@ -967,10 +967,176 @@ const ticketSummaryChart = async (req, res, next) => {
   }
 };
 
+const ticketSummaryChart = async (req, res, next) => {
+  try {
+    const { start, end, date, filterType } = req.query;
+
+    let rangeStart, rangeEnd;
+
+    switch (filterType) {
+      case "Daily":
+        rangeStart = new Date(date);
+        rangeStart.setHours(0, 0, 0, 0);
+        rangeEnd = new Date(rangeStart);
+        rangeEnd.setDate(rangeEnd.getDate() + 1);
+        break;
+
+      case "Weekly":
+        rangeStart = new Date(date);
+        rangeStart.setDate(rangeStart.getDate() - rangeStart.getDay()); // Sunday
+        rangeStart.setHours(0, 0, 0, 0);
+        rangeEnd = new Date(rangeStart);
+        rangeEnd.setDate(rangeEnd.getDate() + 7);
+        break;
+
+      case "Monthly":
+        rangeStart = new Date(date);
+        rangeStart.setDate(1);
+        rangeStart.setHours(0, 0, 0, 0);
+        rangeEnd = new Date(rangeStart);
+        rangeEnd.setMonth(rangeEnd.getMonth() + 1);
+        break;
+
+      case "Yearly":
+        rangeStart = new Date(date);
+        rangeStart.setMonth(0, 1); // Jan 1st
+        rangeStart.setHours(0, 0, 0, 0);
+        rangeEnd = new Date(rangeStart);
+        rangeEnd.setFullYear(rangeEnd.getFullYear() + 1);
+        break;
+
+      case "Custom Range":
+        if (!start || !end) {
+          return res
+            .status(400)
+            .json({ error: "Custom range requires start and end" });
+        }
+        rangeStart = new Date(start);
+        rangeEnd = new Date(end);
+        break;
+
+      default:
+        return res.status(400).json({ error: "Invalid filter type" });
+    }
+
+    const [result] = await Ticket.aggregate([
+      { $match: { createdAt: { $gte: rangeStart, $lt: rangeEnd } } },
+      {
+        $facet: {
+          status: [{ $group: { _id: "$status", count: { $sum: 1 } } }],
+          priority: [{ $group: { _id: "$priority", count: { $sum: 1 } } }],
+          assignees: [
+            { $group: { _id: "$assignedTo", count: { $sum: 1 } } },
+            {
+              $lookup: {
+                from: "users",
+                localField: "_id",
+                foreignField: "_id",
+                as: "user",
+              },
+            },
+            { $unwind: { path: "$user", preserveNullAndEmptyArrays: true } },
+            {
+              $project: {
+                _id: 0,
+                assigneeId: "$_id",
+                assigneeName: { $ifNull: ["$user.name", "Unassigned"] },
+                count: 1,
+              },
+            },
+            { $sort: { count: -1 } },
+          ],
+          categories: [
+            { $group: { _id: "$category", count: { $sum: 1 } } },
+            {
+              $lookup: {
+                from: "categories",
+                localField: "_id",
+                foreignField: "_id",
+                as: "cat",
+              },
+            },
+            { $unwind: { path: "$cat", preserveNullAndEmptyArrays: true } },
+            {
+              $project: {
+                _id: 0,
+                categoryId: "$_id",
+                categoryName: { $ifNull: ["$cat.name", "Uncategorized"] },
+                count: 1,
+              },
+            },
+            { $sort: { count: -1 } },
+          ],
+          departments: [
+            { $group: { _id: "$department", count: { $sum: 1 } } },
+            {
+              $lookup: {
+                from: "departments",
+                localField: "_id",
+                foreignField: "_id",
+                as: "dept",
+              },
+            },
+            { $unwind: { path: "$dept", preserveNullAndEmptyArrays: true } },
+            {
+              $project: {
+                _id: 0,
+                departmentId: "$_id",
+                departmentName: { $ifNull: ["$dept.name", "No Department"] },
+                count: 1,
+              },
+            },
+            { $sort: { count: -1 } },
+          ],
+        },
+      },
+    ]);
+
+    const priorities = ["Low", "Medium", "High", "Critical"];
+    const priorityCounts = priorities.reduce((o, p) => {
+      o[p] = 0;
+      return o;
+    }, {});
+    result.priority.forEach(({ _id, count }) => {
+      priorityCounts[_id] = count;
+    });
+
+    const statuses = [
+      "Open",
+      "In Progress",
+      "On Hold",
+      "Waiting for Customer",
+      "Resolved",
+      "Closed",
+    ];
+    const statusCounts = statuses.reduce((o, s) => {
+      o[s] = 0;
+      return o;
+    }, {});
+    result.status.forEach(({ _id, count }) => {
+      statusCounts[_id] = count;
+    });
+
+    res.json({
+      filterType,
+      start: rangeStart,
+      end: rangeEnd,
+      status: statusCounts,
+      priority: priorityCounts,
+      assignees: result.assignees,
+      categories: result.categories,
+      departments: result.departments,
+    });
+  } catch (err) {
+    console.error("fetch summary error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+};
+
 // @desc Get total ticket counts by status for a month
 // @route GET /api/tickets/status/totals
 // @access Private (Admin/Agent)
-const totalticketStatusCount = async (req, res, next) => {
+const totalticketStatusCounts = async (req, res, next) => {
   try {
     const now = new Date();
     const year = parseInt(req.query.year, 10) || now.getFullYear();
@@ -1011,10 +1177,91 @@ const totalticketStatusCount = async (req, res, next) => {
   }
 };
 
+const totalticketStatusCount = async (req, res, next) => {
+  try {
+    const { start, end, date, filterType } = req.query;
+
+    let rangeStart, rangeEnd;
+
+    switch (filterType) {
+      case "Daily":
+        rangeStart = new Date(date);
+        rangeStart.setHours(0, 0, 0, 0);
+        rangeEnd = new Date(rangeStart);
+        rangeEnd.setDate(rangeEnd.getDate() + 1);
+        break;
+
+      case "Weekly":
+        rangeStart = new Date(date);
+        rangeStart.setDate(rangeStart.getDate() - rangeStart.getDay()); // Sunday
+        rangeStart.setHours(0, 0, 0, 0);
+        rangeEnd = new Date(rangeStart);
+        rangeEnd.setDate(rangeEnd.getDate() + 7);
+        break;
+
+      case "Monthly":
+        rangeStart = new Date(date);
+        rangeStart.setDate(1);
+        rangeStart.setHours(0, 0, 0, 0);
+        rangeEnd = new Date(rangeStart);
+        rangeEnd.setMonth(rangeEnd.getMonth() + 1);
+        break;
+
+      case "Yearly":
+        rangeStart = new Date(date);
+        rangeStart.setMonth(0, 1); // Jan 1
+        rangeStart.setHours(0, 0, 0, 0);
+        rangeEnd = new Date(rangeStart);
+        rangeEnd.setFullYear(rangeEnd.getFullYear() + 1);
+        break;
+
+      case "Custom Range":
+        if (!start || !end) {
+          return res
+            .status(400)
+            .json({ error: "Custom range requires start and end" });
+        }
+        rangeStart = new Date(start);
+        rangeEnd = new Date(end);
+        break;
+
+      default:
+        return res.status(400).json({ error: "Invalid or missing filterType" });
+    }
+
+    const aggregation = await Ticket.aggregate([
+      {
+        $match: {
+          createdAt: { $gte: rangeStart, $lt: rangeEnd },
+        },
+      },
+      {
+        $group: {
+          _id: "$status",
+          count: { $sum: 1 },
+        },
+      },
+    ]);
+
+    const byStatus = aggregation.reduce((acc, { _id, count }) => {
+      acc[_id] = count;
+      return acc;
+    }, {});
+
+    const total = aggregation.reduce((sum, { count }) => sum + count, 0);
+
+    res.json({ filterType, start: rangeStart, end: rangeEnd, total, byStatus });
+  } catch (err) {
+    console.error("Error fetching status summary:", err);
+    res.status(500).json({ error: "Server error" });
+    next(err);
+  }
+};
+
 // @desc Get Open Vs Close data graph
 // @route GET /api/tickets/status/bargraph?year="pass the year"
 // @access Private (Admin/Agent)
-const bargraphForTicketStatus = async (req, res, next) => {
+const bargraphForTicketStatuss = async (req, res, next) => {
   try {
     const now = new Date();
     const yearParam = parseInt(req.query.year, 10) || now.getFullYear();
@@ -1068,6 +1315,84 @@ const bargraphForTicketStatus = async (req, res, next) => {
 
     return res.json({
       year: yearParam,
+      data: result,
+    });
+  } catch (err) {
+    console.error("Error in /yearly-status:", err);
+    return res.status(500).json({ error: "Server error" });
+  }
+};
+
+const bargraphForTicketStatus = async (req, res, next) => {
+  try {
+    const { filterType, date, start, end } = req.query;
+
+    let rangeStart, rangeEnd;
+
+    switch (filterType) {
+      case "Yearly":
+        rangeStart = new Date(date);
+        rangeStart.setMonth(0, 1); // Jan 1
+        rangeStart.setHours(0, 0, 0, 0);
+        rangeEnd = new Date(rangeStart);
+        rangeEnd.setFullYear(rangeEnd.getFullYear() + 1);
+        break;
+
+      case "Custom Range":
+        if (!start || !end) {
+          return res
+            .status(400)
+            .json({ error: "Custom range requires start and end" });
+        }
+        rangeStart = new Date(start);
+        rangeEnd = new Date(end);
+        break;
+
+      default:
+        return res
+          .status(400)
+          .json({
+            error: "Only Yearly or Custom Range supported in bar chart",
+          });
+    }
+
+    const aggregation = await Ticket.aggregate([
+      {
+        $match: {
+          status: { $in: ["Open", "Closed", "In Progress"] },
+          createdAt: { $gte: rangeStart, $lt: rangeEnd },
+        },
+      },
+      {
+        $project: {
+          month: { $month: "$createdAt" },
+          status: 1,
+        },
+      },
+      {
+        $group: {
+          _id: { month: "$month", status: "$status" },
+          count: { $sum: 1 },
+        },
+      },
+    ]);
+
+    const result = Array.from({ length: 12 }, (_, i) => ({
+      month: i + 1,
+      open: 0,
+      closed: 0,
+      inProgress: 0,
+    }));
+
+    aggregation.forEach(({ _id: { month, status }, count }) => {
+      if (status === "Open") result[month - 1].open = count;
+      else if (status === "Closed") result[month - 1].closed = count;
+      else if (status === "In Progress") result[month - 1].inProgress = count;
+    });
+
+    return res.json({
+      start: rangeStart,
+      end: rangeEnd,
       data: result,
     });
   } catch (err) {
